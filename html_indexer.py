@@ -2,80 +2,88 @@
 
 from __future__ import print_function
 from html_parser import HtmlParser
-import os
+from word_parser import WordParser
 from timeit import default_timer as timer
-import multiprocessing
 from word_counter import WordCounter
-import mmh3
+from config import help_function
+from config import BOLD
+from config import END
+from map_reduce import MapReduce
+from bsbi import BSBI
+import multiprocessing
+import os
+import sys
 
-ROOT_FOLDER = 'var'
-WORKERS = 4
-STOP_WORDS = ['a','about','above','after','again','against','all','am','an','and','any','are', 'as']
-SPECIAL_WORDS = ['TOM']
+NAME = 'html_indexer'
 
-
-def path_hash(root_dir, extension):
-    file_list = get_file_list(root_dir, extension)
-    hash_list = []
-    for file_path in file_list:
-        file_name = os.path.split(file_path)[1]
-        path_name = os.path.split(file_path)[0]
-        hash_list.append("".join([
-                         str(mmh3.hash(file_name)),
-                         ' ',
-                         file_name,
-                         ' ',
-                         path_name]
-        ))
-    return hash_list
-
-def create_dictionary():
-    pass
-
-
-def get_file_list(rootdir, extension):
-    file_list = []
-    for root, subfolders, files in os.walk(rootdir):
-        for input_file in files:
-            filename_array = os.path.splitext(input_file)
-            if filename_array[-1] in extension:
-                input_file_path = os.path.join(root, input_file)
-                file_list.append(input_file_path)
-    return file_list
+PARSER = WordParser('special_files/specialwords.txt')
 
 
 def parse_html(input_file_path):
     result_file_path = "".join([os.path.splitext(input_file_path)[0], '.content'])
-    try:
-        html_file = open(input_file_path)
-        html_content = html_file.read()
-        html_file.close()
-        doc = HtmlParser(html_content, "lxml")
+    with open(input_file_path, 'r') as html_file:
+        doc = HtmlParser(html_file.read(), "lxml")
         doc.write_to_file(result_file_path)
-    except IOError:
-        print("Can not open file %s", input_file_path)
 
 
-def count_words(input_file_path):
-    try:
-        counter = WordCounter(input_file_path, SPECIAL_WORDS)
-        counter()
-    except IOError:
-        print("Can not open file %s", input_file_path)
+def parse_text(input_file_path):
+    parser = WordCounter(input_file_path, PARSER)
+    return parser()
+
+
+def get_file_list(rootdir, extension):
+    file_list = []
+    for file_name in os.listdir(rootdir):
+        if file_name.endswith(extension):
+            file_list.append(
+                os.path.join(rootdir, file_name)
+            )
+    return file_list
+
+
+def parse_arguments(argument_list):
+    if len(argument_list) < 3:
+        if len(argument_list) == 1 and argument_list[0] == '-h':
+            help_function(NAME)
+            exit(1)
+        else:
+            print('Invalid input.\nUse - %spython %s.py -h%s - for usage help.' % (BOLD, NAME, END))
+            exit(1)
+    index = 0
+    if '-' in argument_list[0]:
+        workers = argument_list[1]
+        index = 2
+    else:
+        workers = 4
+
+    return argument_list[index:], workers
 
 if __name__ == "__main__":
-    var = path_hash(ROOT_FOLDER, ['.html'])
-    # start = timer()
-    # result = get_file_list(ROOT_FOLDER, ['.html', '.htm'])
-    # multiprocessing.Pool(WORKERS).map(parse_html, result, chunksize=1)
-    # end = timer()
-    # print(end-start)
-    #
-    # start = timer()
-    # result = get_file_list(ROOT_FOLDER, ['.content'])
-    # # for file_name in result:
-    # #     count_words(file_name)
-    # multiprocessing.Pool(WORKERS).map(count_words, result, chunksize=1)
-    # end = timer()
-    # print(end-start)
-    print('something')
+    start = timer()
+    folder_list, workers = parse_arguments(sys.argv[1:])
+    if not os.path.exists(folder_list[-1]):
+        os.mkdir(folder_list[-1])
+
+    # extract content from html
+    multiprocessing.Pool(workers).map(
+        parse_html,
+        get_file_list(folder_list[0], '.html')
+    )
+
+    # parse and count words
+    multiprocessing.Pool(workers).map(
+        parse_text,
+        get_file_list(folder_list[0], '.content')
+    )
+
+    # bsbi indexing
+    temp_path = os.getcwd()
+    index_alg = BSBI(folder_list[0])
+    index_alg(
+        os.path.join(
+            temp_path,
+            folder_list[-1]
+        )
+    )
+    end = timer()
+    print(end-start)

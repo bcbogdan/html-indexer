@@ -3,15 +3,14 @@
 
 from __future__ import print_function
 from bs4 import BeautifulSoup
-import logging
 import re
-import sys
+
 
 FILTER = ['style', 'script', '[document]', 'head', 'title']
 
 
 class HtmlParser(object):
-    def __init__(self, html_content, logger, parser_type="lxml"):
+    def __init__(self, html_content, parser_type="lxml"):
         self.html = BeautifulSoup(html_content.decode('utf-8', 'ignore'), parser_type)
         self.text_content = []
         self.links = []
@@ -43,8 +42,8 @@ class HtmlParser(object):
             print('cannot open file')
 
     @staticmethod
-    def filter_content(element, filter):
-        if element.parent.name in filter:
+    def filter_content(element, filter_list):
+        if element.parent.name in filter_list:
             return False
         elif re.match('<!--.*-->', element):
             return False
